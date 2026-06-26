@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "밑줄 카페 도우미",
+  "version": "1.0",
+  "description": "방문한 게시글 표시",
+
+  "permissions": [
+    "storage"
+  ],
+
+  "host_permissions": [
+    "https://cafe.naver.com/*"
+  ],
+
+  "icons": {
+    "16": "icon128.png",
+    "48": "icon128.png",
+    "128": "icon128.png"
+  },
+
+  "action": {
+    "default_title": "밑줄 카페 도우미",
+    "default_icon": {
+      "16": "icon128.png",
+      "48": "icon128.png",
+      "128": "icon128.png"
+    }
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://cafe.naver.com/f-e/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
