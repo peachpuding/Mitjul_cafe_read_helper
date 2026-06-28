@@ -4,136 +4,89 @@
     const STORAGE_KEY = 'visitedArticles';
     const TARGET_CAFE_ID = '30946980';
 
+    let visitedData = {};
+
     function isTargetCafe() {
-        const match =
-            location.href.match(/cafes\/(\d+)/);
-
-        return match?.[1] === TARGET_CAFE_ID;
-    }
-
-    async function getData() {
-        const result =
-            await chrome.storage.local.get(STORAGE_KEY);
-
-        return result[STORAGE_KEY] || {};
-    }
-
-    async function saveData(data) {
-        await chrome.storage.local.set({
-            [STORAGE_KEY]: data
-        });
+        return location.href.match(/cafes\/(\d+)/)?.[1] === TARGET_CAFE_ID;
     }
 
     function getArticleId(url) {
         return url.match(/articles\/(\d+)/)?.[1];
     }
 
-    async function saveCurrentArticle() {
+    async function loadData() {
+        const result = await chrome.storage.local.get(STORAGE_KEY);
+        visitedData = result[STORAGE_KEY] || {};
+    }
 
-        if (!isTargetCafe())
-            return;
+    async function saveData() {
+        await chrome.storage.local.set({
+            [STORAGE_KEY]: visitedData
+        });
+    }
 
-        const articleId =
-            getArticleId(location.href);
+    async function saveArticle(articleId) {
 
         if (!articleId)
             return;
 
-        const data =
-            await getData();
+        if (visitedData[articleId])
+            return;
 
-        data[articleId] = true;
+        visitedData[articleId] = true;
 
-        await saveData(data);
+        await saveData();
 
-        console.log(
-            '[VisitMarker] 저장:',
-            articleId
-        );
+        console.log('[VisitMarker] 저장:', articleId);
     }
 
-    async function markArticles() {
+    function markArticles() {
 
         if (!isTargetCafe())
             return;
 
-        const data =
-            await getData();
+        document.querySelectorAll('a.article').forEach(link => {
 
-        document
-            .querySelectorAll('a.article')
-            .forEach(link => {
+            const articleId = getArticleId(link.href);
 
-                const articleId =
-                    getArticleId(link.href);
+            if (!articleId)
+                return;
 
-                if (!articleId)
-                    return;
+            if (!visitedData[articleId])
+                return;
 
-                const old =
-                    link.querySelector(
-                        '.visit-marker'
-                    );
+            if (link.querySelector('.visit-marker'))
+                return;
 
-                if (old)
-                    old.remove();
+            const marker = document.createElement('span');
 
-                if (!data[articleId])
-                    return;
+            marker.className = 'visit-marker';
+            marker.textContent = '💫[밑줄이 봄]💫 ';
+            marker.style.fontWeight = 'bold';
 
-                const heart =
-                    document.createElement('span');
-
-                heart.className =
-                    'visit-marker';
-
-                heart.textContent =
-                    '💫[밑줄이 봄]💫 ';
-
-                heart.style.fontWeight =
-                    'bold';
-
-                link.prepend(heart);
-            });
+            link.prepend(marker);
+        });
     }
 
-    let previousUrl =
-        location.href;
+    document.addEventListener('click', async (e) => {
 
-    setInterval(() => {
+        const link = e.target.closest('a.article');
 
-        if (
-            previousUrl ===
-            location.href
-        ) {
+        if (!link)
             return;
-        }
 
-        previousUrl =
-            location.href;
+        if (!isTargetCafe())
+            return;
 
-        saveCurrentArticle();
+        const articleId = getArticleId(link.href);
 
-        setTimeout(() => {
-            markArticles();
-        }, 1000);
+        await saveArticle(articleId);
 
-    }, 500);
+    }, true);
 
-    const observer =
-        new MutationObserver(() => {
-            markArticles();
-        });
-
-    observer.observe(
-        document.body,
-        {
-            childList: true,
-            subtree: true
-        }
-    );
-
-    saveCurrentArticle();
-    markArticles();
+    (async () => {
+        await loadData();
+        markArticles();
+    })();
 
 })();
