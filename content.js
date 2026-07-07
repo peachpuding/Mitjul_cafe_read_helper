@@ -7,6 +7,9 @@
 
     let visitedData = {};
     let lastUrl = location.href; 
+    
+    let debounceTimer = null;
+    let urlCheckTimer = null;
 
     // --- [유틸리티 함수] ---
 
@@ -33,6 +36,27 @@
         return null;
     }
 
+    /**
+     * [핵심 추가] 엘리먼트 내부를 깊숙이 탐색하여 실제 제목 글자가 시작되는 텍스트 노드를 찾습니다.
+     */
+    function findTitleTextNode(element) {
+        for (const node of element.childNodes) {
+            // 공백이 아닌 실제 텍스트가 포함된 노드를 찾은 경우
+            if (node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0) {
+                return node;
+            }
+            // 다른 하위 태그가 있다면 더 깊숙이 탐색 (이미 등록된 마커나 댓글수는 제외)
+            if (node.nodeType === Node.ELEMENT_NODE && 
+                !node.classList.contains('visit-marker') && 
+                !node.classList.contains('cmt') &&
+                !node.classList.contains('memo')) {
+                const innerNode = findTitleTextNode(node);
+                if (innerNode) return innerNode;
+            }
+        }
+        return null;
+    }
+
     // --- [데이터 관리 및 저장] ---
 
     async function loadData() {
@@ -48,7 +72,6 @@
         if (!articleId || visitedData[articleId]) return;
         visitedData[articleId] = true;
         await saveData();
-        console.log(`[밑줄] 새 방문 저장 완료: ${articleId}`);
     }
 
     // --- [방문 표시] ---
@@ -56,8 +79,11 @@
     function markArticles() {
         if (!isTargetCafe()) return;
 
-        const articleLinks = document.querySelectorAll('a.article');
+        const container = document.querySelector('.article-board') || document;
+        const articleLinks = container.querySelectorAll('a.article');
         
+        if (articleLinks.length === 0) return;
+
         articleLinks.forEach(link => {
             const articleId = getArticleId(link.href);
             if (!articleId || !visitedData[articleId]) return;
@@ -67,43 +93,41 @@
             marker.className = 'visit-marker';
             marker.textContent = MARKER_TEXT;
             marker.style.fontWeight = 'bold';
-            marker.style.color = '#ff6b6b'; 
+            marker.style.color = '#000000'; 
             marker.style.marginRight = '3px'; 
 
-            link.prepend(marker);
+            // [수정 포인트] 무조건 앞에 넣는 것이 아니라, 실제 글자 노드를 찾아서 그 바로 앞에 삽입합니다.
+            const textNode = findTitleTextNode(link);
+            if (textNode) {
+                textNode.parentNode.insertBefore(marker, textNode);
+            } else {
+                link.prepend(marker); // 텍스트 노드를 못 찾았을 때를 대비한 안전 장치 백업
+            }
         });
     }
 
-    // --- [실시간 감시 및 타이밍 보정 (핵심 수정)] ---
+    // --- [실시간 감시 메커니즘] ---
 
     function setupMutationObserver() {
         if (!isTargetCafe()) return;
 
-        const observer = new MutationObserver(async () => {
-            
-            // [해결 포인트 1] 사용자가 이전/다음글을 보다가 '목록'으로 돌아와 주소가 바뀐 경우
+        const observer = new MutationObserver(() => {
             if (location.href !== lastUrl) {
-                console.log(`[밑줄] 주소 변경 감지 (목록 복귀 또는 이동): ${location.href}`);
                 lastUrl = location.href;
                 
-                // 본문 내 이동 중 저장된 최신 데이터를 창고에서 다시 동기화합니다.
-                await loadData();
-                
-                // 만약 돌아온 곳이 또 다른 게시글 본문이라면 저장
-                const currentArticleId = getArticleId(location.href);
-                if (currentArticleId) {
-                    await saveArticle(currentArticleId);
-                }
-                
-                // [해결 포인트 2] 네이버가 목록 HTML을 늦게 뿌리는 것에 대비해 시차(0.1초, 0.3초, 0.6초)를 두고 연속 마킹 호출
-                markArticles();
-                setTimeout(markArticles, 100);
-                setTimeout(markArticles, 300);
-                setTimeout(markArticles, 600);
+                clearTimeout(urlCheckTimer);
+                urlCheckTimer = setTimeout(async () => {
+                    await loadData(); 
+                    const currentArticleId = getArticleId(location.href);
+                    if (currentArticleId) {
+                        await saveArticle(currentArticleId);
+                    }
+                    markArticles();
+                }, 50); 
             }
-            
-            // 일반적인 DOM 변경 시에도 끊임없이 마킹 시도
-            markArticles();
+
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(markArticles, 100);
         });
 
         observer.observe(document.body, { childList: true, subtree: true });
@@ -121,15 +145,10 @@
             await saveArticle(currentArticleId);
         }
 
-        // 초기 로드 시에도 네이버의 지연 로딩에 대응하기 위해 쪼개서 실행
         markArticles(); 
-        setTimeout(markArticles, 200);
-        setTimeout(markArticles, 500);
-        
         setupMutationObserver(); 
     }
 
-    // 클릭 백업 리스너
     document.addEventListener('click', async (e) => {
         const link = e.target.closest('a');
         if (!link || !isTargetCafe()) return;
@@ -137,7 +156,7 @@
         const articleId = getArticleId(link.href);
         if (articleId) {
             await saveArticle(articleId);
-            setTimeout(markArticles, 50); // 클릭 직후 즉시 반영 시도
+            setTimeout(markArticles, 30);
         }
     }, true);
 
